@@ -562,7 +562,7 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
                         'Gửi mã OTP',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 2.sp,
+                          fontSize: 20.sp,
                           fontWeight: FontWeight.bold,
                           shadows: [
                             Shadow(
