@@ -1,6 +1,4 @@
-import 'package:app_dat_xe/src/blocs/auth_bloc.dart';
-import 'package:app_dat_xe/src/fire_base/fire_base_auth.dart';
-import 'package:app_dat_xe/src/resources/dialog/loading_dialog.dart';
+import 'dart:async';
 import 'package:app_dat_xe/src/resources/dialog/msg_dialog.dart';
 import 'package:app_dat_xe/src/resources/home_page.dart';
 import 'package:app_dat_xe/src/resources/login_page.dart';
@@ -11,6 +9,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pinput/pinput.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class RegisterPage extends StatefulWidget {
   @override
@@ -18,9 +17,7 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
-  AuthBloc authBloc = AuthBloc();
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirAuth _firAuth = FirAuth();
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -261,7 +258,10 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   void dispose() {
-    authBloc.dispose();
+    _emailController.dispose();
+    _passController.dispose();
+    _phoneController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -305,10 +305,10 @@ class _RegisterPageState extends State<RegisterPage> {
                   style: TextStyle(fontSize: 16.sp, color: Color(0xff606470), fontWeight: FontWeight.bold),
                 ),
                 SizedBox(height: 10.h,),
-                _buildTextField(_nameController, 'Họ và tên', Icons.person, authBloc.nameStream),
+                _buildTextField(_nameController, 'Họ và tên', Icons.person),
                 _buildPhoneNumberField(),
-                _buildTextField(_emailController, 'Email', Icons.email, authBloc.emailStream),
-                _buildTextField(_passController, 'Mật khẩu', Icons.lock, authBloc.passStream, obscureText: true),
+                _buildTextField(_emailController, 'Email', Icons.email),
+                _buildTextField(_passController, 'Mật khẩu', Icons.lock),
                 Padding(
                   padding: EdgeInsets.fromLTRB(0.w, 15.h, 0.w, 10.h),
                   child: GestureDetector(
@@ -442,33 +442,66 @@ class _RegisterPageState extends State<RegisterPage> {
   Widget _buildTextField(
       TextEditingController controller,
       String label,
-      IconData icon, // Thay đổi kiểu dữ liệu từ String -> IconData
-      Stream<String?> stream,
-      {bool obscureText = false}
+      IconData icon,
       ) {
     return Padding(
       padding: EdgeInsets.fromLTRB(0.w, 15.h, 0.w, 15.h),
-      child: StreamBuilder(
-        stream: stream,
-        builder: (context, snapshot) => TextField(
-          controller: controller,
-          style: TextStyle(fontSize: 18.sp, color: Colors.black),
-          obscureText: obscureText,
-          decoration: InputDecoration(
-            errorText: snapshot.hasError ? snapshot.error.toString() : null,
-            labelText: label,
-            contentPadding: EdgeInsets.symmetric(vertical: 14.h, horizontal: 14.w), // Tăng độ rộng trên và dưới
-            prefixIcon: Padding(
-              padding: EdgeInsets.only(left: 18.w, right: 10.w), // Đẩy icon vào trong một chút
-              child: Icon(icon, size: 24.r, color: Colors.black), // Dùng Icons thay vì ảnh từ assets
-            ),
-            border: OutlineInputBorder(
-              borderSide: BorderSide(color: Color(0xffCED0D2), width: 1.w),
-              borderRadius: BorderRadius.all(Radius.circular(30.r)),
-            ),
+      child: TextField(
+        controller: controller,
+        style: TextStyle(fontSize: 18.sp, color: Colors.black),
+        decoration: InputDecoration(
+          labelText: label,
+          contentPadding: EdgeInsets.symmetric(vertical: 14.h, horizontal: 14.w),
+          prefixIcon: Padding(
+            padding: EdgeInsets.only(left: 18.w, right: 10.w),
+            child: Icon(icon, size: 24.r, color: Colors.black),
+          ),
+          border: OutlineInputBorder(
+            borderSide: BorderSide(color: Color(0xffCED0D2), width: 1.w),
+            borderRadius: BorderRadius.all(Radius.circular(30.r)),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPasswordField(TextEditingController controller, String label, IconData icon) {
+    return StatefulBuilder(
+      builder: (context, setState) {
+        bool _obscureText = true;
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(0.w, 15.h, 0.w, 15.h),
+          child: TextField(
+            controller: controller,
+            obscureText: _obscureText,
+            style: TextStyle(fontSize: 18.sp, color: Colors.black),
+            decoration: InputDecoration(
+              labelText: label,
+              contentPadding: EdgeInsets.symmetric(vertical: 14.h, horizontal: 14.w),
+              prefixIcon: Padding(
+                padding: EdgeInsets.only(left: 18.w, right: 10.w),
+                child: Icon(icon, size: 24.r, color: Colors.black),
+              ),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscureText ? Icons.visibility_off : Icons.visibility,
+                  color: Colors.black,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _obscureText = !_obscureText;
+                  });
+                },
+              ),
+              border: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xffCED0D2), width: 1.w),
+                borderRadius: BorderRadius.all(Radius.circular(30.r)),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -552,15 +585,35 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _verifyPhoneNumber() async {
-    _phoneNumber = formatPhoneNumber(selectedCountryCode, _phoneController.text);
+    _phoneNumber = formatPhoneNumber(selectedCountryCode, _phoneController.text.trim());
     _email = _emailController.text.trim();
     _password = _passController.text.trim();
     _name = _nameController.text.trim();
 
+    // Kiểm tra nếu bất kỳ trường nào bị bỏ trống
     if (_phoneNumber.isEmpty || _email.isEmpty || _password.isEmpty || _name.isEmpty) {
-      MsgDialog.showMsgDialog(context, "Error", "Please fill all fields.");
+      MsgDialog.showMsgDialog(context, "Lỗi", "Vui lòng điền đầy đủ thông tin !!!");
       return;
     }
+
+// Kiểm tra định dạng email
+    bool isValidEmail(String email) {
+      final RegExp emailRegex = RegExp(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$");
+      return emailRegex.hasMatch(email);
+    }
+
+    if (!isValidEmail(_email)) {
+      MsgDialog.showMsgDialog(context, "Lỗi", "Email không hợp lệ. Vui lòng nhập đúng định dạng (ví dụ: example@email.com).");
+      return;
+    }
+
+// Kiểm tra độ dài mật khẩu
+    if (_password.length < 8) {
+      MsgDialog.showMsgDialog(context, "Lỗi", "Mật khẩu phải có ít nhất 8 ký tự.");
+      return;
+    }
+
+// Nếu tất cả hợp lệ, tiếp tục xử lý đăng ký
     try{
       await _auth.verifyPhoneNumber(
         phoneNumber: _phoneNumber,
@@ -569,7 +622,7 @@ class _RegisterPageState extends State<RegisterPage> {
           _linkEmailWithPhone(); // Liên kết email sau khi xác thực số điện thoại
         },
         verificationFailed: (FirebaseAuthException e) {
-          MsgDialog.showMsgDialog(context, "Phone Verification Failed", e.message!);
+          MsgDialog.showMsgDialog(context, "Xác thực thất bại", e.message!);
         },
         codeSent: (String verificationId, int? resendToken) {
           setState(() {
@@ -579,7 +632,8 @@ class _RegisterPageState extends State<RegisterPage> {
         },
         codeAutoRetrievalTimeout: (String verificationId) {},
       );
-    }catch(e){
+    }
+    catch(e){
     }
   }
 
@@ -697,10 +751,10 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  // 🔹 Xác minh OTP
+  // Xác minh OTP
   void _verifyOTP(String otp) async {
     if (_verificationId.isEmpty) {
-      _showMessageDialog("Error", "Verification ID is not set!");
+      _showMessageDialog("Lỗi", "ID xác minh chưa được thiết lập!");
       return;
     }
 
@@ -715,14 +769,20 @@ class _RegisterPageState extends State<RegisterPage> {
       UserCredential userCredential = await _auth.signInWithCredential(credential);
 
       if (userCredential.user != null) {
+        // Lưu trạng thái đăng nhập vào SharedPreferences
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setBool("isLoggedIn", true);
+        await prefs.setString("userPhone", userCredential.user!.phoneNumber ?? "");
+
         Navigator.pop(context); // Đóng OTP dialog
         _linkEmailWithPhone(); // Liên kết email sau khi xác thực số điện thoại thành công
       }
     } catch (e) {
       setState(() => _isVerifying = false);
-      _showMessageDialog("OTP Verification Failed", "Invalid OTP. Please try again.");
+      _showMessageDialog("Xác thực OTP thất bại", "OTP không hợp lệ. Vui lòng thử lại.");
     }
   }
+
 
 // 🔹 Hàm liên kết email với số điện thoại
   Future<void> _linkEmailWithPhone() async {
@@ -760,7 +820,7 @@ class _RegisterPageState extends State<RegisterPage> {
         if (mounted) Navigator.pop(context);
 
         print("Lỗi khi liên kết email: $e");
-        MsgDialog.showMsgDialog(context, "Error", "Failed to link email with phone.");
+        MsgDialog.showMsgDialog(context, "Lỗi", "Liên kết email với số điện thoại thất bại");
       }
     }
   }
@@ -796,20 +856,5 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  Future<void> _registerUser() async {
-    _firAuth.signUp(
-      _email,
-      _password,
-      _name,
-      _phoneNumber,
-          () {
-        // Nếu đăng ký thành công -> chuyển sang HomePage
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomePage()));
-      },
-          (errorMsg) {
-        MsgDialog.showMsgDialog(context, "Sign-Up Error", errorMsg);
-      },
-    );
-  }
 }
 

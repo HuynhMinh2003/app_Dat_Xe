@@ -16,7 +16,7 @@ class FirAuth {
             onRegisterError); // Lấy UID từ user
         print(user);
       } else {
-        print("User creation failed: user is null");
+        print("Tạo người dùng không thành công: người dùng trống");
       }
     }).catchError((err) {
       _onSignUpErr(err.code, onRegisterError);
@@ -33,7 +33,7 @@ class FirAuth {
     ref.child(userId).set(user).then((user) {
       onSuccess();
     }).catchError((err) {
-      onRegisterError('Sign up fall, please try again');
+      onRegisterError('Đăng ký thất bại, vui lòng thử lại');
     });
   }
 
@@ -45,7 +45,7 @@ class FirAuth {
       print("On sign in success");
       onSuccess();
     }).catchError((err) {
-      onSignInError("Sign in fall, please try again");
+      onSignInError("Đăng nhập thất bại, vui lòng thử lại");
     });
   }
 
@@ -53,27 +53,27 @@ class FirAuth {
     switch (code) {
       case "email-already-in-use":
         onRegisterError(
-            'The email address is already in use by another account.');
+            'Địa chỉ email này đã được một tài khoản khác sử dụng.');
         break;
       case "invalid-email":
-        onRegisterError('The email address is not valid.');
+        onRegisterError('Địa chỉ email không hợp lệ.');
         break;
       case "weak-password":
-        onRegisterError('The password is not strong enough.');
+        onRegisterError('Mật khẩu không đủ mạnh.');
         break;
       case "operation-not-allowed":
         onRegisterError(
-            'Email/password accounts are not enabled. Please contact support.');
+            'Tài khoản email/mật khẩu không được kích hoạt. Vui lòng liên hệ bộ phận hỗ trợ.');
         break;
       case "too-many-requests":
-        onRegisterError('Too many requests. Please wait and try again later.');
+        onRegisterError('Quá nhiều yêu cầu. Vui lòng đợi và thử lại sau.');
         break;
       case "network-request-failed":
         onRegisterError(
-            'Network error. Please check your connection and try again.');
+            'Lỗi mạng. Vui lòng kiểm tra kết nối của bạn và thử lại.');
         break;
       default:
-        onRegisterError('Sign up failed, please try again.');
+        onRegisterError('Đăng ký không thành công, vui lòng thử lại.');
         break;
     }
   }

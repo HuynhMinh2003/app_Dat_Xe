@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -55,6 +56,39 @@ class _LoginPageState extends State<LoginPage> {
           idToken: googleAuth.idToken,
         );
 
+        // Kiểm tra email trong Firebase Realtime Database
+        DatabaseReference dbRef =
+            FirebaseDatabase.instance.ref().child('users');
+        DataSnapshot snapshot = await dbRef.get();
+
+        String? userUid;
+        String? signInMethod;
+
+        if (snapshot.exists) {
+          Map<dynamic, dynamic> users = snapshot.value as Map<dynamic, dynamic>;
+          users.forEach((uid, userData) {
+            if (userData["email"] == googleUser.email) {
+              userUid = uid;
+              signInMethod = userData["signInMethod"];
+            }
+          });
+        }
+
+        if (userUid != null && signInMethod == "email/pass") {
+          print(
+              "Tài khoản đã đăng ký bằng email & password. Không thể đăng nhập bằng Google.");
+          Future.delayed(const Duration(milliseconds: 200), () {
+            _showCustomSnackBar(
+              context,
+              "Tài khoản này đã đăng ký bằng email & password. Hãy đăng nhập theo cách đó.",
+              Colors.red,
+              Icons.error,
+            );
+          });
+          return;
+        }
+
+        // Nếu không bị chặn, tiến hành đăng nhập Google
         UserCredential userCredential =
             await FirebaseAuth.instance.signInWithCredential(credential);
         User? user = userCredential.user;
@@ -64,18 +98,22 @@ class _LoginPageState extends State<LoginPage> {
 
           DatabaseReference ref =
               FirebaseDatabase.instance.ref().child('users/${user.uid}');
-          DataSnapshot snapshot = await ref.get();
+          DataSnapshot userSnapshot = await ref.get();
 
-          if (snapshot.exists) {
+          if (userSnapshot.exists) {
             print("Tài khoản đã tồn tại. Kiểm tra số điện thoại...");
 
             Map<String, dynamic> userData =
-                Map<String, dynamic>.from(snapshot.value as Map);
+                Map<String, dynamic>.from(userSnapshot.value as Map);
             if (userData.containsKey("phone") &&
                 userData["phone"].toString().isNotEmpty) {
               print("Người dùng đã có số điện thoại, chuyển đến HomePage");
 
-              // Xóa toàn bộ stack để tránh quay lại trang nhập số điện thoại
+              // ✅ Chỉ lưu trạng thái đăng nhập nếu vào thẳng HomePage
+              SharedPreferences prefs = await SharedPreferences.getInstance();
+              await prefs.setBool("isLoggedIn", true);
+              await prefs.setString("userEmail", user.email ?? "");
+
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (context) => const HomePage()),
@@ -84,14 +122,12 @@ class _LoginPageState extends State<LoginPage> {
             } else {
               print("Người dùng chưa có số điện thoại, yêu cầu nhập");
 
-              // Kiểm tra nếu đã ở trang PhoneNumberPage thì không push lại nữa
               if (ModalRoute.of(context)?.settings.name != 'PhoneNumberPage') {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
                     builder: (context) => PhoneNumberPage(user: user),
-                    settings: const RouteSettings(
-                        name: 'PhoneNumberPage'), // Đặt tên route
+                    settings: const RouteSettings(name: 'PhoneNumberPage'),
                   ),
                 );
               }
@@ -118,11 +154,11 @@ class _LoginPageState extends State<LoginPage> {
 
     return Scaffold(
       body: GestureDetector(
-        onTap: (){
+        onTap: () {
           FocusManager.instance.primaryFocus?.unfocus();
         },
-        child: SafeArea(child:
-        Container(
+        child: SafeArea(
+            child: Container(
           padding: EdgeInsets.fromLTRB(30.w, 0.h, 30.w, 0.h),
           constraints: const BoxConstraints.expand(),
           color: Colors.white,
@@ -133,14 +169,14 @@ class _LoginPageState extends State<LoginPage> {
                   height: 60.h,
                 ),
                 Transform.scale(
-          scale: 1.01, // Phóng to ảnh
-          child: Image.asset(
-          'assets/ic_car_yellow.png',
-          width: MediaQuery.of(context).size.width * 0.55,
-          height: MediaQuery.of(context).size.height * 0.2,
-          fit: BoxFit.contain,
-        ),
-        ),
+                  scale: 1.01, // Phóng to ảnh
+                  child: Image.asset(
+                    'assets/ic_car_yellow.png',
+                    width: MediaQuery.of(context).size.width * 0.55,
+                    height: MediaQuery.of(context).size.height * 0.2,
+                    fit: BoxFit.contain,
+                  ),
+                ),
                 Padding(
                   padding: EdgeInsets.fromLTRB(0.w, 0.h, 0.w, 6.h),
                   child: Text(
@@ -162,6 +198,8 @@ class _LoginPageState extends State<LoginPage> {
                   padding: EdgeInsets.fromLTRB(0.w, 50.h, 0.w, 20.h),
                   child: TextField(
                     controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    // Bàn phím nhập email
                     style: TextStyle(
                       fontSize: 18.sp,
                       color: Colors.black,
@@ -169,9 +207,10 @@ class _LoginPageState extends State<LoginPage> {
                     decoration: InputDecoration(
                       labelText: 'Email',
                       labelStyle: TextStyle(fontSize: 16.sp),
-                      contentPadding: EdgeInsets.symmetric(vertical: 14.h, horizontal: 14.w), // Tăng độ rộng trên và dưới
+                      contentPadding: EdgeInsets.symmetric(
+                          vertical: 14.h, horizontal: 14.w),
                       prefixIcon: Padding(
-                        padding: EdgeInsets.only(left: 20.w, right: 10.w), // Đẩy icon vào bên phải một chút
+                        padding: EdgeInsets.only(left: 20.w, right: 10.w),
                         child: Icon(Icons.email),
                       ),
                       border: OutlineInputBorder(
@@ -181,7 +220,6 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                 ),
-
                 Padding(
                   padding: EdgeInsets.fromLTRB(0.w, 3.h, 0.w, 5.h),
                   child: TextField(
@@ -191,27 +229,32 @@ class _LoginPageState extends State<LoginPage> {
                     decoration: InputDecoration(
                       labelText: 'Mật khẩu',
                       labelStyle: TextStyle(fontSize: 16.sp),
-                      contentPadding: EdgeInsets.symmetric(vertical: 14.h, horizontal: 14.w), // Tăng độ rộng trên và dưới
+                      contentPadding: EdgeInsets.symmetric(
+                          vertical: 14.h, horizontal: 14.w),
+                      // Tăng độ rộng trên và dưới
                       prefixIcon: Padding(
-                        padding: EdgeInsets.only(left: 20.w, right: 10.w), // Đẩy icon vào bên phải một chút
+                        padding: EdgeInsets.only(left: 20.w, right: 10.w),
+                        // Đẩy icon vào bên phải một chút
                         child: Icon(Icons.lock),
                       ),
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscureText ? Icons.visibility : Icons.visibility_off,
+                          _obscureText
+                              ? Icons.visibility
+                              : Icons.visibility_off,
                           // Thay đổi icon
                           color: Colors.grey,
                         ),
                         onPressed: () {
                           setState(() {
                             _obscureText =
-                            !_obscureText; // Đảo trạng thái hiển thị mật khẩu
+                                !_obscureText; // Đảo trạng thái hiển thị mật khẩu
                           });
                         },
                       ),
                       border: OutlineInputBorder(
                         borderSide:
-                        BorderSide(color: Color(0xffCED0D2), width: 1.w),
+                            BorderSide(color: Color(0xffCED0D2), width: 1.w),
                         borderRadius: BorderRadius.all(Radius.circular(30.r)),
                       ),
                     ),
@@ -226,7 +269,8 @@ class _LoginPageState extends State<LoginPage> {
                       child: StatefulBuilder(
                         builder: (context, setState) {
                           return GestureDetector(
-                            onTapDown: (_) => setState(() => _isPressed1 = true),
+                            onTapDown: (_) =>
+                                setState(() => _isPressed1 = true),
                             onTapCancel: () =>
                                 setState(() => _isPressed1 = false),
                             onTapUp: (_) {
@@ -278,27 +322,27 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         boxShadow: isPressed1
                             ? [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
-                            // Bóng mờ hơn khi nhấn
-                            offset: Offset(2.w, 2.h),
-                            blurRadius: 3.r,
-                          ),
-                        ]
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  // Bóng mờ hơn khi nhấn
+                                  offset: Offset(2.w, 2.h),
+                                  blurRadius: 3.r,
+                                ),
+                              ]
                             : [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.4),
-                            // Bóng đậm phía dưới
-                            offset: Offset(4.w, 4.h),
-                            blurRadius: 5.r,
-                          ),
-                          BoxShadow(
-                            color: Colors.white.withOpacity(0.5),
-                            // Ánh sáng phía trên
-                            offset: Offset(-2.w, -2.h),
-                            blurRadius: 5.r,
-                          ),
-                        ],
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.4),
+                                  // Bóng đậm phía dưới
+                                  offset: Offset(4.w, 4.h),
+                                  blurRadius: 5.r,
+                                ),
+                                BoxShadow(
+                                  color: Colors.white.withOpacity(0.5),
+                                  // Ánh sáng phía trên
+                                  offset: Offset(-2.w, -2.h),
+                                  blurRadius: 5.r,
+                                ),
+                              ],
                       ),
                       child: Center(
                         child: Text(
@@ -324,7 +368,7 @@ class _LoginPageState extends State<LoginPage> {
                   padding: EdgeInsets.fromLTRB(0.w, 5.h, 0.w, 5.h),
                   child: Container(
                     constraints:
-                    BoxConstraints.loose(Size(double.infinity, 45.h)),
+                        BoxConstraints.loose(Size(double.infinity, 45.h)),
                     alignment: AlignmentDirectional.center,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -392,27 +436,27 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           boxShadow: isPressed2
                               ? [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
-                              // Bóng mờ hơn khi nhấn
-                              offset: Offset(2.w, 2.h),
-                              blurRadius: 3.r,
-                            ),
-                          ]
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    // Bóng mờ hơn khi nhấn
+                                    offset: Offset(2.w, 2.h),
+                                    blurRadius: 3.r,
+                                  ),
+                                ]
                               : [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.4),
-                              // Bóng đậm phía dưới
-                              offset: Offset(4.w, 4.h),
-                              blurRadius: 5.r,
-                            ),
-                            BoxShadow(
-                              color: Colors.white.withOpacity(0.5),
-                              // Ánh sáng phía trên
-                              offset: Offset(-2.w, -2.h),
-                              blurRadius: 5.r,
-                            ),
-                          ],
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.4),
+                                    // Bóng đậm phía dưới
+                                    offset: Offset(4.w, 4.h),
+                                    blurRadius: 5.r,
+                                  ),
+                                  BoxShadow(
+                                    color: Colors.white.withOpacity(0.5),
+                                    // Ánh sáng phía trên
+                                    offset: Offset(-2.w, -2.h),
+                                    blurRadius: 5.r,
+                                  ),
+                                ],
                         ),
                         child: Row(
                           children: [
@@ -442,52 +486,58 @@ class _LoginPageState extends State<LoginPage> {
                           style: TextStyle(
                               color: Color(0xff606470), fontSize: 16.sp),
                           children: <TextSpan>[
-                            TextSpan(
-                              recognizer: TapGestureRecognizer()
-                                ..onTapDown = (_) {
-                                  setState(() {
-                                    _isPressed = true;
-                                  });
-                                }
-                                ..onTapUp = (_) {
-                                  setState(() {
-                                    _isPressed = false;
-                                  });
-                                  Navigator.of(context).push(
-                                      PageRouteBuilder(
-                                        transitionDuration: Duration(milliseconds: 3000), // Thời gian hiệu ứng
-                                        pageBuilder: (context, animation, secondaryAnimation) => RegisterPage(),
-                                        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                                          var fadeAnimation = Tween<double>(
-                                            begin: 0.0, // Bắt đầu từ trong suốt
-                                            end: 1.0,   // Hiện ra hoàn toàn
-                                          ).animate(animation);
+                        TextSpan(
+                          recognizer: TapGestureRecognizer()
+                            ..onTapDown = (_) {
+                              setState(() {
+                                _isPressed = true;
+                              });
+                            }
+                            ..onTapUp = (_) {
+                              setState(() {
+                                _isPressed = false;
+                              });
+                              Navigator.of(context).push(PageRouteBuilder(
+                                transitionDuration:
+                                    Duration(milliseconds: 3000),
+                                // Thời gian hiệu ứng
+                                pageBuilder:
+                                    (context, animation, secondaryAnimation) =>
+                                        RegisterPage(),
+                                transitionsBuilder: (context, animation,
+                                    secondaryAnimation, child) {
+                                  var fadeAnimation = Tween<double>(
+                                    begin: 0.0,
+                                    // Bắt đầu từ trong suốt
+                                    end: 1.0, // Hiện ra hoàn toàn
+                                  ).animate(animation);
 
-                                          var scaleAnimation = Tween<double>(
-                                            begin: 0.8, // Nhỏ hơn bình thường
-                                            end: 1.0,   // Phóng to đến kích thước chuẩn
-                                          ).animate(animation);
+                                  var scaleAnimation = Tween<double>(
+                                    begin: 0.8,
+                                    // Nhỏ hơn bình thường
+                                    end: 1.0, // Phóng to đến kích thước chuẩn
+                                  ).animate(animation);
 
-                                          return FadeTransition(
-                                            opacity: fadeAnimation,
-                                            child: ScaleTransition(
-                                              scale: scaleAnimation,
-                                              child: child,
-                                            ),
-                                          );
-                                        },
-                                      ));
-                                  },
-                              text: " Hãy đăng kí để trải nghiệm",
-                              style: TextStyle(
-                                color:
+                                  return FadeTransition(
+                                    opacity: fadeAnimation,
+                                    child: ScaleTransition(
+                                      scale: scaleAnimation,
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                              ));
+                            },
+                          text: " Hãy đăng kí để trải nghiệm",
+                          style: TextStyle(
+                            color:
                                 Colors.blue.withOpacity(_isPressed ? 0.6 : 1.0),
-                                fontSize: 16.sp,
-                                fontWeight: FontWeight.bold,
-                                decoration: TextDecoration.underline,
-                              ),
-                            ),
-                          ])),
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.bold,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ])),
                 ),
               ],
             ),
@@ -552,13 +602,26 @@ class _LoginPageState extends State<LoginPage> {
   //   );
   // }
 
-  void _onLoginClick() {
+  void _onLoginClick() async {
     String email = _emailController.text;
     String pass = _passController.text;
+
+    if (email.isEmpty || pass.isEmpty) {
+      MsgDialog.showMsgDialog(
+          context, "Lỗi", "Vui lòng điền đầy đủ thông tin !!!");
+      return;
+    }
+
     var authBloc = MyApp.of(context).authBloc;
-    LoadingDialog.showLoadingDialog(context, "Loading...");
-    authBloc.signIn(email, pass, () {
+    LoadingDialog.showLoadingDialog(context, "Đang tải...");
+
+    authBloc.signIn(email, pass, () async {
       LoadingDialog.hideLoadingDialog(context);
+
+      // Lưu trạng thái đăng nhập vào SharedPreferences
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isLoggedIn', true);
+
       if (mounted && context.mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const HomePage()),
@@ -566,7 +629,7 @@ class _LoginPageState extends State<LoginPage> {
       }
     }, (msg) {
       LoadingDialog.hideLoadingDialog(context);
-      MsgDialog.showMsgDialog(context, "Sign in", msg);
+      MsgDialog.showMsgDialog(context, "Đăng nhập", msg);
     });
   }
 
@@ -584,7 +647,8 @@ class _LoginPageState extends State<LoginPage> {
           padding: EdgeInsets.only(
             left: 20.w,
             right: 20.w,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 20, // Đẩy nội dung lên khi bàn phím mở
+            bottom: MediaQuery.of(context).viewInsets.bottom +
+                20, // Đẩy nội dung lên khi bàn phím mở
             top: 20.h,
           ),
           child: Column(
@@ -610,7 +674,8 @@ class _LoginPageState extends State<LoginPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   TextButton(
-                    onPressed: () => Navigator.pop(context), // Đóng bottom sheet
+                    onPressed: () => Navigator.pop(context),
+                    // Đóng bottom sheet
                     child: Text("Hủy"),
                   ),
                   ElevatedButton(
@@ -623,13 +688,18 @@ class _LoginPageState extends State<LoginPage> {
 
                         // Hiển thị thông báo lỗi
                         Future.delayed(Duration(milliseconds: 200), () {
-                          _showCustomSnackBar(context, "Vui lòng điền email của bạn", Colors.red, Icons.error);
+                          _showCustomSnackBar(
+                              context,
+                              "Vui lòng điền email của bạn",
+                              Colors.red,
+                              Icons.error);
                         });
                         return;
                       }
 
                       // Hiển thị dialog loading
-                      LoadingDialog.showLoadingDialog(context, "Kiểm tra tài khoản...");
+                      LoadingDialog.showLoadingDialog(
+                          context, "Kiểm tra tài khoản...");
 
                       try {
                         // Kiểm tra email trong Firebase Realtime Database
@@ -639,7 +709,8 @@ class _LoginPageState extends State<LoginPage> {
                         String? signInMethod;
 
                         if (snapshot.exists) {
-                          Map<dynamic, dynamic> users = snapshot.value as Map<dynamic, dynamic>;
+                          Map<dynamic, dynamic> users =
+                              snapshot.value as Map<dynamic, dynamic>;
                           users.forEach((uid, userData) {
                             if (userData["email"] == email) {
                               userUid = uid;
@@ -649,17 +720,25 @@ class _LoginPageState extends State<LoginPage> {
                         }
 
                         if (userUid == null) {
-                          Navigator.pop(context); // Đóng loading dialog và bottom sheet
-                          Navigator.pop(context); // Đóng loading dialog và bottom sheet
+                          Navigator.pop(
+                              context); // Đóng loading dialog và bottom sheet
+                          Navigator.pop(
+                              context); // Đóng loading dialog và bottom sheet
                           Future.delayed(Duration(milliseconds: 200), () {
-                            _showCustomSnackBar(context, "Email này không tồn tại trong hệ thống", Colors.red, Icons.error);
+                            _showCustomSnackBar(
+                                context,
+                                "Email này không tồn tại trong hệ thống",
+                                Colors.red,
+                                Icons.error);
                           });
                           return;
                         }
 
                         if (signInMethod == "google") {
-                          Navigator.pop(context); // Đóng loading dialog và bottom sheet
-                          Navigator.pop(context); // Đóng loading dialog và bottom sheet
+                          Navigator.pop(
+                              context); // Đóng loading dialog và bottom sheet
+                          Navigator.pop(
+                              context); // Đóng loading dialog và bottom sheet
                           Future.delayed(Duration(milliseconds: 200), () {
                             _showCustomSnackBar(
                               context,
@@ -672,18 +751,27 @@ class _LoginPageState extends State<LoginPage> {
                         }
 
                         // Gửi email reset mật khẩu nếu tất cả điều kiện đã thông qua
-                        await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-                        Navigator.pop(context); // Đóng loading dialog và bottom sheet
-                        Navigator.pop(context); // Đóng loading dialog và bottom sheet
+                        await FirebaseAuth.instance
+                            .sendPasswordResetEmail(email: email);
+                        Navigator.pop(
+                            context); // Đóng loading dialog và bottom sheet
+                        Navigator.pop(
+                            context); // Đóng loading dialog và bottom sheet
                         Future.delayed(Duration(milliseconds: 200), () {
-                          _showCustomSnackBar(context, "Link đặt lại mật khẩu đã được gửi!", Colors.green, Icons.check_circle);
+                          _showCustomSnackBar(
+                              context,
+                              "Link đặt lại mật khẩu đã được gửi!",
+                              Colors.green,
+                              Icons.check_circle);
                         });
-
                       } catch (error) {
-                        Navigator.pop(context); // Đóng loading dialog và bottom sheet
-                        Navigator.pop(context); // Đóng loading dialog và bottom sheet
+                        Navigator.pop(
+                            context); // Đóng loading dialog và bottom sheet
+                        Navigator.pop(
+                            context); // Đóng loading dialog và bottom sheet
                         Future.delayed(Duration(milliseconds: 200), () {
-                          _showCustomSnackBar(context, error.toString(), Colors.red, Icons.error);
+                          _showCustomSnackBar(context, error.toString(),
+                              Colors.red, Icons.error);
                         });
                       }
                     },
@@ -699,26 +787,28 @@ class _LoginPageState extends State<LoginPage> {
   }
 
 // Hàm hiển thị SnackBar từ trên
-  void _showCustomSnackBar(BuildContext context, String message, Color color, IconData icon) {
+  void _showCustomSnackBar(
+      BuildContext context, String message, Color color, IconData icon) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
             Icon(icon, color: Colors.white),
             SizedBox(width: 10.w),
-            Expanded(child: Text(message, style: TextStyle(color: Colors.white))),
+            Expanded(
+                child: Text(message, style: TextStyle(color: Colors.white))),
           ],
         ),
         backgroundColor: color,
-        behavior: SnackBarBehavior.floating, // Hiển thị nổi lên thay vì dính dưới cùng
+        behavior: SnackBarBehavior.floating,
+        // Hiển thị nổi lên thay vì dính dưới cùng
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10.r), // Bo góc SnackBar
         ),
-        margin: EdgeInsets.all(20.r), // Tạo khoảng cách xung quanh
+        margin: EdgeInsets.all(20.r),
+        // Tạo khoảng cách xung quanh
         duration: Duration(seconds: 3), // Hiển thị trong 3 giây
       ),
     );
   }
-
-
 }

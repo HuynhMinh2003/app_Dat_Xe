@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:pinput/pinput.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'home_page.dart';
 
@@ -251,10 +252,9 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
             Navigator.pushAndRemoveUntil(
               context,
               MaterialPageRoute(builder: (context) => const HomePage()),
-                  (route) => false, // Xóa hết các trang trước đó
+              (route) => false, // Xóa hết các trang trước đó
             );
           }
-
         },
         verificationFailed: (FirebaseAuthException e) {
           print("Lỗi gửi OTP: $e");
@@ -287,7 +287,8 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
 
     showDialog(
       context: context,
-      barrierDismissible: false, // Không cho phép đóng hộp thoại khi nhấn ra ngoài
+      barrierDismissible: false,
+      // Không cho phép đóng hộp thoại khi nhấn ra ngoài
       builder: (BuildContext context) {
         return Dialog(
           shape: RoundedRectangleBorder(
@@ -298,7 +299,8 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20.r),
-              border: Border.all(color: Colors.blue, width: 3.w), // 🔹 Viền màu xanh
+              border: Border.all(color: Colors.blue, width: 3.w),
+              // 🔹 Viền màu xanh
               boxShadow: [
                 BoxShadow(
                   color: Colors.blue.withOpacity(0.2),
@@ -313,7 +315,8 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
                 Text(
                   "Nhập mã OTP",
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20.sp),
+                  style:
+                      TextStyle(fontWeight: FontWeight.bold, fontSize: 20.sp),
                 ),
                 SizedBox(height: 10.h),
                 const Text(
@@ -384,7 +387,8 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.pop(context), // Đóng hộp thoại
-                      child: const Text("Hủy", style: TextStyle(color: Colors.red)),
+                      child: const Text("Hủy",
+                          style: TextStyle(color: Colors.red)),
                     ),
                   ],
                 ),
@@ -398,7 +402,7 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
 
   void _verifyOTP(String otp) async {
     if (verificationId.isEmpty) {
-      _showMessageDialog("Error", "Verification ID is not set!");
+      _showMessageDialog("Lỗi", "ID xác minh chưa được thiết lập!");
       return;
     }
 
@@ -416,12 +420,12 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
       print("Lỗi khi xác minh OTP: $e");
       setState(() => _isVerifying = false);
 
-      _showMessageDialog("OTP Verification Failed", "Invalid OTP. Please try again.");
-
+      _showMessageDialog("Xác minh OTP không thành công",
+          "OTP không hợp lệ. Vui lòng thử lại.");
     }
   }
 
-  void linkPhoneNumberWithGoogle(String smsCode) async {
+  Future<void> linkPhoneNumberWithGoogle(String smsCode) async {
     try {
       // Hiển thị Loading Dialog
       showDialog(
@@ -441,21 +445,26 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
       // Liên kết số điện thoại với tài khoản Google
       await widget.user.linkWithCredential(phoneCredential);
       print("Liên kết số điện thoại thành công!");
-      await Future.delayed(Duration(seconds: 2)); // Chờ Firebase cập nhật dữ liệu
+      await Future.delayed(
+          const Duration(seconds: 2)); // Chờ Firebase cập nhật dữ liệu
 
-// 🔹 Reload user trước khi kiểm tra
+      // 🔹 Reload user trước khi kiểm tra
       await FirebaseAuth.instance.currentUser?.reload();
       User? user = FirebaseAuth.instance.currentUser;
+
       if (user != null) {
-        print("🔹 Danh sách provider của tài khoản: ${user.providerData.map((e) => e.providerId).toList()}");
+        print(
+            "🔹 Danh sách provider của tài khoản: ${user.providerData.map((e) => e.providerId).toList()}");
         print("📧 Email: ${user.email}");
         print("📱 Số điện thoại: ${user.phoneNumber}");
       }
 
-      FirebaseAuth.instance.fetchSignInMethodsForEmail(widget.user.email!).then((methods) {
-        print("✅ Phương thức đăng nhập hiện có sau khi liên kết số điện thoại: $methods");
+      FirebaseAuth.instance
+          .fetchSignInMethodsForEmail(widget.user.email!)
+          .then((methods) {
+        print(
+            "✅ Phương thức đăng nhập hiện có sau khi liên kết số điện thoại: $methods");
       });
-
 
       // Cập nhật số điện thoại vào Firebase Database
       DatabaseReference ref =
@@ -467,13 +476,18 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
         "signInMethod": "google",
       });
 
+      // ✅ Lưu trạng thái đăng nhập vào SharedPreferences
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setBool("isLoggedIn", true);
+      await prefs.setString("userEmail", widget.user.email ?? "");
+
       // Ẩn Loading Dialog sau khi hoàn thành
       if (mounted) {
         Navigator.pop(context); // Đóng dialog trước khi chuyển trang
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const HomePage()),
-              (route) => false, // Xóa hết các trang trước đó
+          (route) => false, // Xóa hết các trang trước đó
         );
       }
     } catch (e) {
@@ -481,8 +495,8 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
       if (mounted) Navigator.pop(context);
 
       print("Lỗi khi liên kết số điện thoại: $e");
-      MsgDialog.showMsgDialog(context, "Lỗi liên kết số điện thoại", e.toString());
-
+      MsgDialog.showMsgDialog(
+          context, "Lỗi liên kết số điện thoại", e.toString());
     }
   }
 
@@ -580,41 +594,6 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
               SizedBox(
                 height: 40.h,
               ),
-              // if (otpSent) ...[
-              //   Padding(
-              //     padding: const EdgeInsets.symmetric(horizontal: 20),
-              //     child: PinCodeTextField(
-              //       length: 6,
-              //       // Số ký tự OTP
-              //       appContext: context,
-              //       keyboardType: TextInputType.number,
-              //       autoFocus: true,
-              //       // Tự động focus khi mở màn hình
-              //       animationType: AnimationType.fade,
-              //       cursorColor: Colors.blue,
-              //       pinTheme: PinTheme(
-              //         shape: PinCodeFieldShape.box,
-              //         // Hình dạng ô (box / underline / circle)
-              //         borderRadius: BorderRadius.circular(6),
-              //         fieldHeight: 50,
-              //         fieldWidth: 40,
-              //         activeFillColor: Colors.white,
-              //         selectedFillColor: Colors.blue.shade100,
-              //         // Màu khi đang nhập
-              //         inactiveFillColor: Colors.grey.shade200,
-              //         // Màu khi chưa nhập
-              //         activeColor: Colors.blue,
-              //         selectedColor: Colors.blueAccent,
-              //         inactiveColor: Colors.grey,
-              //       ),
-              //       onCompleted: (value) => _verifyOTP(value),
-              //       // Gọi hàm kiểm tra khi nhập đủ
-              //       onChanged: (value) {
-              //         print("OTP nhập: $value");
-              //       },
-              //     ),
-              //   )
-              // ],
             ],
           ),
         ),
@@ -674,8 +653,7 @@ class _PhoneNumberPageState extends State<PhoneNumberPage> {
                           value: value,
                           child: Row(
                             children: [
-                              Icon(Icons.phone,
-                                  color: Colors.grey, size: 20.r),
+                              Icon(Icons.phone, color: Colors.grey, size: 20.r),
                               SizedBox(width: 10.w),
                               Text(value, style: TextStyle(fontSize: 16.sp)),
                             ],
